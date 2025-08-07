@@ -1,0 +1,61 @@
+# Symfony / PHP
+/vendor/
+/var/
+/.env
+.env.local
+.env.*.local
+.phpunit.result.cache
+node_modules/
+
+# Cache & logs
+/.idea/
+/.cache/
+/build/
+/coverage/
+/log/
+/logs/
+
+# Composer
+/composer.lock
+/vendor-bundles/
+/composer.phar
+
+# PHPUnit
+.phpunit.cache/
+.phpunit.result.cache
+test-output/
+
+# IDEs
+/.vscode/
+/.idea/
+/*.sublime-project
+/*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Others
+*.log
+*.lock
+*.bak
+*.swp
+*.tmp
+
+# Symfony Flex
+/config/secrets/*
+!/config/secrets/prod/prod.decrypt.private.php
+
+# Static analysis tools
+/phpstan.neon.local
+/.php-cs-fixer.cache
+
+# Rector
+rector.php
+rector.php.cache
+
+# Twig CS
+/.twigcs.cache
+
+# CI
+/.github/workflows/*.lock
