@@ -2,9 +2,15 @@
 
 namespace SonnyDev\FedexBundle;
 
+use SonnyDev\FedexBundle\DependencyInjection\FedexExtension;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
+use Symfony\Component\DependencyInjection\Extension\ExtensionInterface;
 
-class FedexBundle extends Bundle
+final class FedexBundle extends Bundle
 {
+    public function getContainerExtension(): ?ExtensionInterface
+    {
+        return new FedexExtension();
+    }
 
 }

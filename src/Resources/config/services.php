@@ -13,7 +13,8 @@ return static function (ContainerConfigurator $config): void {
 
     $services->load('SonnyDev\\FedexBundle\\', __DIR__ . '/../../')
         ->exclude([__DIR__ . '/../../DependencyInjection/', __DIR__ . '/../../Entity/', __DIR__ . '/../../Tests/']);
-
+     $services->load('SonnyDev\\FedexBundle\\Command\\', __DIR__.'/../../Command/')
+         ->tag('console.command');
     // Paramètres spécifiques avec injection depuis .env
     $services->get(FedexTrackingService::class)
         ->arg('$fedexApiTracking', '%env(FEDEX_API_TRACKING)%');
@@ -25,4 +26,6 @@ return static function (ContainerConfigurator $config): void {
         ->arg('$fedexClientShipSecret', '%env(FEDEX_CLIENT_SHIP_SECRET)%')
         ->arg('$fedexOauthToken', '%env(FEDEX_CLIENT_AUTH_LINK)%')
         ->arg('$fedexApiTracking', '%env(FEDEX_API_TRACKING)%');
+
+
 };

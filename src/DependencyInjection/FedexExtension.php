@@ -7,7 +7,7 @@ use Symfony\Component\DependencyInjection\Extension\Extension;
 use Symfony\Component\DependencyInjection\Loader\PhpFileLoader;
 use Symfony\Component\Config\FileLocator;
 
-class FedexBundleExtension extends Extension
+class FedexExtension extends Extension
 {
     public function load(array $configs, ContainerBuilder $container): void
     {
