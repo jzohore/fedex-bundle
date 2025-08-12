@@ -2,6 +2,8 @@
 
 namespace SonnyDev\FedexBundle\Service;
 
+use SonnyDev\FedexBundle\DTO\FedexTrackingEvent;
+use SonnyDev\FedexBundle\Exception\FedexApiException;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -9,46 +11,67 @@ class FedexTrackingService
 {
     public function __construct(
         private readonly HttpClientInterface $httpClient,
-        private readonly FedexAuthenticator $authenticator,
-        #[Autowire('%env(FEDEX_API_TRACKING)%')] private readonly string $fedexApiTracking,
-    )
-    {}
-    public function trackingInFedex($trackingNumber)
-    {
-        $response = $this->httpClient->request(
-            'POST',
-            $this->fedexApiTracking, [
+        private readonly FedexAuthenticator  $authenticator,
+        private readonly string              $fedexApiTracking, // injecté via param/env
+    ) {}
+
+    /**
+     * @return FedexTrackingEvent[]
+     */
+    public function trackShipment(
+        string $trackingNumber,
+        bool $includeDetailedScans = true,
+        string $locale = 'fr_FR'
+    ): array {
+        try {
+            $response = $this->httpClient->request('POST', $this->fedexApiTracking, [
                 'headers' => [
-                    'Authorization' => 'Bearer '.$this->authenticator->getAccessToken(),
-                    'X-locale' => 'fr_FR',
+                    'Authorization' => 'Bearer ' . $this->authenticator->getAccessToken(),
+                    'X-locale' => $locale,
                     'Content-Type' => 'application/json',
                 ],
                 'json' => [
-                    'includeDetailedScans' => true,
-                    'trackingInfo' => [
-                        [
-                            'trackingNumberInfo' => [
-                                'trackingNumber' => $trackingNumber,
-                            ],
-                        ],
-                    ],
+                    'includeDetailedScans' => $includeDetailedScans,
+                    'trackingInfo' => [[
+                        'trackingNumberInfo' => ['trackingNumber' => $trackingNumber],
+                    ]],
                 ],
-            ]
-        );
+            ]);
 
-        $responseData = $response->toArray();
+            if (200 !== $response->getStatusCode()) {
+                throw new FedexApiException(
+                    message: 'FedEx Tracking HTTP ' . $response->getStatusCode(),
+                    statusCode: $response->getStatusCode(),
+                    responseData: $response->toArray(false)
+                );
+            }
 
-        if ($responseData) {
-            $scanEvents = [];
-            foreach ($responseData['output']['completeTrackResults'] as $completeTrackResult) {
-                foreach ($completeTrackResult['trackResults'] as $trackResult) {
-                    $scanEvents[] = $trackResult['scanEvents'];
+            $data = $response->toArray(false);
+
+            $rawEvents = [];
+            foreach (($data['output']['completeTrackResults'] ?? []) as $complete) {
+                foreach (($complete['trackResults'] ?? []) as $result) {
+                    foreach (($result['scanEvents'] ?? []) as $event) {
+                        $rawEvents[] = $event;
+                    }
                 }
             }
 
-            return $scanEvents;
-        } else {
-            return null;
+            // map -> DTO
+            $events = array_map(static fn(array $e) => FedexTrackingEvent::fromApi($e), $rawEvents);
+
+            // tri par date desc
+            usort($events, static function (FedexTrackingEvent $a, FedexTrackingEvent $b): int {
+                return $b->date <=> $a->date;
+            });
+
+            return $events;
+        } catch (\Throwable $e) {
+            throw new FedexApiException(
+                message: 'FedEx Tracking error: ' . $e->getMessage(),
+                previous: $e
+            );
         }
     }
+
 }

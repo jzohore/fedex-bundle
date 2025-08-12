@@ -4,7 +4,6 @@ namespace SonnyDev\FedexBundle\Service;
 
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\Cache\InvalidArgumentException;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\HttpClient\Exception\ClientExceptionInterface;
 use Symfony\Contracts\HttpClient\Exception\DecodingExceptionInterface;
 use Symfony\Contracts\HttpClient\Exception\RedirectionExceptionInterface;
@@ -15,11 +14,14 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 class FedexAuthenticator
 {
     public function __construct(
-        private HttpClientInterface $httpClient,
-        private CacheItemPoolInterface $cache,
-        #[Autowire('%env(FEDEX_CLIENT_ID)%')] private string $clientId,
-        #[Autowire('%env(FEDEX_CLIENT_SECRET)%')] private string $clientSecret,
-        #[Autowire('%env(FEDEX_CLIENT_AUTH_LINK)%')] private string $authUrl,
+        private readonly HttpClientInterface $httpClient,
+        private readonly CacheItemPoolInterface $cache,
+        private readonly string $fedexClientId,
+        private readonly string $fedexClientSecret,
+        private readonly string $fedexClientShipId,
+        private readonly string $fedexClientShipSecret,
+        private readonly string $fedexOauthToken,
+        private readonly string $fedexApiTracking
     ) {}
 
     /**
@@ -40,14 +42,14 @@ class FedexAuthenticator
             return $item->get();
         }
 
-        $response = $this->httpClient->request('POST', $this->authUrl, [
+        $response = $this->httpClient->request('POST', $this->fedexOauthToken, [
             'headers' => [
                 'Content-Type' => 'application/x-www-form-urlencoded',
             ],
             'body' => [
                 'grant_type' => 'client_credentials',
-                'client_id' => $this->clientId,
-                'client_secret' => $this->clientSecret,
+                'client_id' => $this->fedexClientId,
+                'client_secret' => $this->fedexClientSecret,
             ],
         ]);
 
