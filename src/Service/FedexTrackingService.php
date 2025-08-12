@@ -74,4 +74,10 @@ class FedexTrackingService
         }
     }
 
+    public function getLatestEvent(string $trackingNumber, string $locale = 'fr_FR'): ?FedexTrackingEvent
+    {
+        $events = $this->trackShipment($trackingNumber, includeDetailedScans: true, locale: $locale);
+        return $events[0] ?? null;
+    }
+
 }
