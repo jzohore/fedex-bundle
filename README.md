@@ -52,7 +52,7 @@ FEDEX_API_TRACKING=https://apis-sandbox.fedex.com/track/v1/trackingnumbers
 ## 🧱 Roadmap
 
 - [x] Authentification OAuth2
-- [ ] Suivi de colis
+- [x] Suivi de colis
 - [ ] Création d'envois
 - [ ] Téléchargement d'étiquettes
 - [ ] Estimation des tarifs
@@ -62,6 +62,11 @@ FEDEX_API_TRACKING=https://apis-sandbox.fedex.com/track/v1/trackingnumbers
 
 ---
 
+## 📚 Documentation
+
+- [🔍 Section Tracking](./docs/tracking_section.md) — exemple d'utilisation, explication du DTO `FedexTrackingEvent`, et commande CLI.
+
+---
 ## 📜 Licence
 
 MIT © [Zohoré Junior](mailto:zohorejuniorpro@gmail.com)
