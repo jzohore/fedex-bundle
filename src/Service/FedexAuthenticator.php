@@ -4,6 +4,7 @@ namespace SonnyDev\FedexBundle\Service;
 
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\Cache\InvalidArgumentException;
+use RuntimeException;
 use Symfony\Contracts\HttpClient\Exception\ClientExceptionInterface;
 use Symfony\Contracts\HttpClient\Exception\DecodingExceptionInterface;
 use Symfony\Contracts\HttpClient\Exception\RedirectionExceptionInterface;
@@ -18,14 +19,11 @@ class FedexAuthenticator
         private readonly CacheItemPoolInterface $cache,
         private readonly string $fedexClientId,
         private readonly string $fedexClientSecret,
-        private readonly string $fedexClientShipId,
-        private readonly string $fedexClientShipSecret,
         private readonly string $fedexOauthToken,
-        private readonly string $fedexApiTracking
-    ) {}
+    ) {
+    }
 
     /**
-     * @return string
      * @throws InvalidArgumentException
      * @throws ClientExceptionInterface
      * @throws DecodingExceptionInterface
@@ -54,13 +52,13 @@ class FedexAuthenticator
         ]);
 
         if (200 !== $response->getStatusCode()) {
-            throw new \RuntimeException('FedEx API returned error: ' . $response->getStatusCode());
+            throw new RuntimeException('FedEx API returned error: ' . $response->getStatusCode());
         }
 
         $data = $response->toArray();
 
         if (!isset($data['access_token'])) {
-            throw new \RuntimeException('No access_token in FedEx response');
+            throw new RuntimeException('No access_token in FedEx response');
         }
 
         $token = $data['access_token'];
