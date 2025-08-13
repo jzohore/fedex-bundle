@@ -28,6 +28,9 @@ return static function (ContainerConfigurator $config): void {
     $services->get(FedexTrackingService::class)
         ->arg('$fedexApiTracking', '%env(FEDEX_API_TRACKING)%')
     ;
+    $services->get(SonnyDev\FedexBundle\Service\FedexRatesService::class)
+        ->arg('$ratesEndpoint', '%env(FEDEX_API_RATES)%')
+        ->arg('$accountNumber', '%env(FEDEX_ACCOUNT_NUMBER)%');
 
     $services->get(FedexAuthenticator::class)
         ->arg('$fedexClientId', '%env(FEDEX_CLIENT_ID)%')
