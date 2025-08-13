@@ -18,6 +18,7 @@ class FedexTrackingEvent
 
     /**
      * @param array<string, mixed> $event
+     *
      * @throws Exception
      */
     public static function fromApi(array $event = []): self
@@ -29,7 +30,7 @@ class FedexTrackingEvent
         return new self(
             type: $event['eventType'] ?? '',
             description: $event['eventDescription'] ?? '',
-            date: new \DateTimeImmutable($event['date'] ?? 'now'),
+            date: new DateTimeImmutable($event['date'] ?? 'now'),
             city: $city,
             country: $country
         );

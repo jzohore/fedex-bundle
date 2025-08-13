@@ -40,7 +40,8 @@ class FedexTrackingService
             ]);
 
             if (200 !== $response->getStatusCode()) {
-                throw new FedexApiException(message: 'FedEx Tracking HTTP ' . $response->getStatusCode(), statusCode: $response->getStatusCode(), responseData: $response->toArray(false));
+                $body = $response->getContent(false); // <- corps brut même si 4xx/5xx
+                throw new FedexApiException('Rates HTTP ' . $response->getStatusCode() . ' — ' . $body, $response->getStatusCode(), ['response' => $body]);
             }
 
             $data = $response->toArray(false);

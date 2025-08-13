@@ -1,21 +1,25 @@
 <?php
 
 namespace SonnyDev\FedexBundle\Command;
+
+use DateTimeImmutable;
+use SonnyDev\FedexBundle\Exception\FedexApiException;
+use SonnyDev\FedexBundle\Service\FedexRatesService;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
-use Symfony\Component\Console\Helper\Table;
-use DateTimeImmutable;
+use Throwable;
 
 #[AsCommand(name: 'fedex:quote', description: 'Get FedEx shipping quotes (price + delivery estimate)')]
 final class FedexQuoteCommand extends Command
 {
-    public function __construct(private readonly object $rateService) // any service exposing getQuotes(...)
+    public function __construct(private readonly FedexRatesService $rateService) // any service exposing getQuotes(...)
     {
         parent::__construct();
     }
@@ -29,7 +33,7 @@ final class FedexQuoteCommand extends Command
             ->addArgument('to-postal', InputArgument::REQUIRED, 'Destination postal code (e.g. 10001)')
             ->addArgument('to-country', InputArgument::REQUIRED, 'Destination country code (ISO2, e.g. US)')
 
-            // Options for addresses
+            // Address options
             ->addOption('from-city', null, InputOption::VALUE_REQUIRED, 'Origin city')
             ->addOption('from-state', null, InputOption::VALUE_REQUIRED, 'Origin state/province code')
             ->addOption('to-city', null, InputOption::VALUE_REQUIRED, 'Destination city')
@@ -40,8 +44,7 @@ final class FedexQuoteCommand extends Command
                 'pkg',
                 null,
                 InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
-                'Add a package with semicolon pairs, e.g.: "weight=2;weightUnit=KG;length=30;width=20;height=10;dimensionUnit=CM". '
-                . 'Repeat --pkg for multiple packages. If omitted, you must provide --weight (single package).'
+                'Add a package with semicolon pairs, e.g.: "weight=2;weightUnit=KG;length=30;width=20;height=10;dimensionUnit=CM". Repeat --pkg for multiple packages.'
             )
             ->addOption('weight', null, InputOption::VALUE_REQUIRED, 'Shortcut: single package weight (numeric)')
             ->addOption('weight-unit', null, InputOption::VALUE_REQUIRED, 'LB or KG (single package)', 'KG')
@@ -54,6 +57,9 @@ final class FedexQuoteCommand extends Command
             ->addOption('ship-date', null, InputOption::VALUE_REQUIRED, 'Ship date (YYYY-MM-DD). Default = today')
             ->addOption('currency', null, InputOption::VALUE_REQUIRED, 'Preferred currency (e.g. EUR, USD)')
             ->addOption('service', null, InputOption::VALUE_REQUIRED, 'Optional FedEx service code to force (e.g. FEDEX_INTERNATIONAL_PRIORITY)')
+            ->addOption('declared-value', null, InputOption::VALUE_REQUIRED, 'Declared customs value (required for international goods)')
+            ->addOption('carrier', null, InputOption::VALUE_REQUIRED, 'Carrier code (FDXE for Express, FDXG for Ground)')
+            ->addOption('documents', null, InputOption::VALUE_NONE, 'Mark shipment as documents (no customs commodities)')
 
             // Output
             ->addOption('json', null, InputOption::VALUE_NONE, 'Output raw JSON payload of quotes')
@@ -62,9 +68,10 @@ final class FedexQuoteCommand extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $io = new SymfonyStyle($input, $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output);
+        $stderr = $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output;
+        $io = new SymfonyStyle($input, $stderr);
 
-        // --- Build address arrays matching your service signature
+        // Build address arrays
         $from = [
             'postalCode' => (string)$input->getArgument('from-postal'),
             'countryCode' => strtoupper((string)$input->getArgument('from-country')),
@@ -78,53 +85,82 @@ final class FedexQuoteCommand extends Command
             'stateOrProvinceCode' => $input->getOption('to-state'),
         ];
 
-        // --- Build packages array
+        // Build packages array
         $packages = $this->buildPackages($input, $io);
         if (empty($packages)) {
             $io->error('You must provide at least one package via --pkg or --weight.');
+
             return Command::INVALID;
         }
 
         $shipDate = $input->getOption('ship-date') ? new DateTimeImmutable((string)$input->getOption('ship-date')) : new DateTimeImmutable('today');
         $currency = $input->getOption('currency') ? strtoupper((string)$input->getOption('currency')) : null;
         $serviceCode = $input->getOption('service') ? strtoupper((string)$input->getOption('service')) : null;
+        $declaredValue = null !== $input->getOption('declared-value') ? (float)$input->getOption('declared-value') : null;
+        $carrier = $input->getOption('carrier') ? strtoupper((string)$input->getOption('carrier')) : null; // e.g. FDXE
+        $isDocuments = (bool)$input->getOption('documents');
 
         try {
             // Call your existing service
-            $quotes = $this->rateService->getQuotes($from, $to, $packages, $shipDate, $currency, $serviceCode);
+            $quotes = $this->rateService->getQuotes(
+                $from,
+                $to,
+                $packages,
+                $shipDate,
+                $currency,
+                $serviceCode,
+                $declaredValue,
+                $carrier,
+                $isDocuments
+            );
 
             if ($input->getOption('json')) {
-                $output->writeln(json_encode(array_map(fn($q) => $this->quoteToArray($q), $quotes), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+                $output->writeln(json_encode(array_map(fn ($q) => $this->quoteToArray($q), $quotes), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+
                 return Command::SUCCESS;
             }
 
             if (empty($quotes)) {
                 $io->warning('No quotes returned for the given shipment.');
+
                 return Command::SUCCESS;
             }
 
-            $io->title('FedEx Quotes');
             $table = new Table($output);
             $table->setHeaders(['Service code', 'Service name', 'Amount', 'Currency', 'Transit (days)', 'ETA']);
             foreach ($quotes as $q) {
-                // Expecting your FedexRateQuote DTO with properties shown in your sample
                 $table->addRow([
-                    $q->serviceCode,
-                    $q->serviceName,
-                    number_format($q->amount, 2, '.', ' '),
-                    $q->currency,
+                    $q->serviceCode ?? '—',
+                    $q->serviceName ?? '—',
+                    isset($q->amount) ? number_format((float)$q->amount, 2, '.', ' ') : '—',
+                    $q->currency ?? '—',
                     $q->transitDays ?? '—',
                     $q->estimatedDeliveryDate?->format('Y-m-d') ?? '—',
                 ]);
             }
+
+            $io->title('FedEx Quotes');
             $table->render();
 
             return Command::SUCCESS;
-        } catch (\SonnyDev\FedexBundle\Exception\FedexApiException $e) {
-            $io->error($e->getMessage());
+        } catch (FedexApiException $e) {
+            $msg = (string)$e->getMessage();
+            if (str_contains($msg, 'RATE.LOCATION.NOSERVICE')) {
+                $io->error('Aucun service FedEx disponible pour ce trajet avec votre compte (lane non autorisée). Essayez un trajet aligné avec le pays du compte ou faites activer le produit/lane par FedEx.');
+
+                return Command::FAILURE;
+            }
+            if (str_contains($msg, 'RATEQUOTE.SHIPMENTPROCESSING.ERROR')) {
+                $io->error("Votre compte n'est pas autorisé à obtenir des devis pour ce trajet/environnement. Vérifiez l’activation Shipping/Rates et le mapping du compte à l’app.");
+
+                return Command::FAILURE;
+            }
+            $io->error($msg);
+
             return Command::FAILURE;
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $io->error('Unexpected error: ' . $e->getMessage());
+
             return Command::FAILURE;
         }
     }
@@ -132,7 +168,7 @@ final class FedexQuoteCommand extends Command
     /**
      * Build packages array from either repeated --pkg options or single-package shortcuts.
      * Each package structure must match what your service expects:
-     *   [ 'weight' => float, 'weightUnit' => 'KG|LB', 'length' => float, 'width' => float, 'height' => float, 'dimensionUnit' => 'CM|IN' ]
+     *   [ 'weight' => float, 'weightUnit' => 'KG|LB', 'length' => ?float, 'width' => ?float, 'height' => ?float, 'dimensionUnit' => 'CM|IN' ]
      */
     private function buildPackages(InputInterface $input, SymfonyStyle $io): array
     {
@@ -157,13 +193,13 @@ final class FedexQuoteCommand extends Command
         }
 
         // Fallback: single package via shortcuts
-        if (empty($packages) && $input->getOption('weight') !== null) {
+        if (empty($packages) && null !== $input->getOption('weight')) {
             $packages[] = [
                 'weight' => (float)$input->getOption('weight'),
                 'weightUnit' => strtoupper((string)$input->getOption('weight-unit')),
-                'length' => $input->getOption('length') !== null ? (float)$input->getOption('length') : null,
-                'width' => $input->getOption('width') !== null ? (float)$input->getOption('width') : null,
-                'height' => $input->getOption('height') !== null ? (float)$input->getOption('height') : null,
+                'length' => null !== $input->getOption('length') ? (float)$input->getOption('length') : null,
+                'width' => null !== $input->getOption('width') ? (float)$input->getOption('width') : null,
+                'height' => null !== $input->getOption('height') ? (float)$input->getOption('height') : null,
                 'dimensionUnit' => strtoupper((string)$input->getOption('dim-unit')),
             ];
         }
@@ -171,17 +207,20 @@ final class FedexQuoteCommand extends Command
         return $packages;
     }
 
-    /**
-     * Parse a string like "weight=2;weightUnit=KG;length=30;width=20;height=10;dimensionUnit=CM" to an assoc array.
-     */
+    /** Parse a string like "weight=2;weightUnit=KG;length=30;width=20;height=10;dimensionUnit=CM" to an assoc array. */
     private function parseSemicolonPairs(string $raw): array
     {
         $out = [];
         foreach (array_filter(array_map('trim', explode(';', $raw))) as $pair) {
-            if (!str_contains($pair, '=')) { continue; }
+            if (!str_contains($pair, '=')) {
+                continue;
+            }
             [$k, $v] = array_map('trim', explode('=', $pair, 2));
-            if ($k !== '') { $out[$k] = $v; }
+            if ('' !== $k) {
+                $out[$k] = $v;
+            }
         }
+
         return $out;
     }
 
